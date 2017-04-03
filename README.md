@@ -1,4 +1,4 @@
-﻿![BlueLight](https://github.com/BlueLightJapan/BlueLight/blob/master/logo.jpg)</br>
+﻿![BlueLight](https://github.com/BlueLightJapan/BlueLight/blob/master/logo.jpg)<br>
 
 #BlueLight for 1.0.5
 ## Select Language: [English](#ENG) [日本語](#JPN)
