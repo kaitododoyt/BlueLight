@@ -21,7 +21,7 @@
 
 namespace pocketmine\inventory;
 
-use pocketmine\inventory\transaction\DropItemTransaction;
+use pocketmine\inventory\DropItemTransaction;
 use pocketmine\item\Item;
 use pocketmine\Player;
 use pocketmine\Server;
