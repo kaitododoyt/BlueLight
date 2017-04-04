@@ -273,6 +273,8 @@ class Server{
 	public $enchantingTableEnabled = true;
 	public $cleanentity = false;
 	public $countBookshelf = false;
+	public $allowInventoryCheats = false;
+		
 	/**
 	 * @return string
 	 */
@@ -1453,7 +1455,8 @@ class Server{
 				"HungerTimer" => 80,
 				"RideableEntity" => false,
 				"CleanEntity" => false,
-			]);
+			"allowInventoryCheats" => false,		
+]);
 
 			$this->logger->info("Loading server properties...");
 			$this->properties = new Config($this->dataPath . "server.properties", Config::PROPERTIES, [
@@ -1508,7 +1511,8 @@ class Server{
 			$this->stevekick = $this->getProperty("SteveKick", false);
 			$this->golemspawn = $this->getProperty("GolemSpawn", false);
 			$this->rideableentity = $this->getProperty("RideableEntity", false);
-			$this->cleanentity = $this->getProperty("CleanEntity", false);
+			$this->cleanentity = $this->getProperty("CleanEntity", false)
+		$this->allowInventoryCheats = $this->getAdvancedProperty("inventory.allow-cheats", false);
 
 			if($this->crashdump){
 				if(!file_exists($dataPath . "crashdumps/")){
