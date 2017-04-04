@@ -30,150 +30,162 @@ use pocketmine\Server;
  * This TransactionGroup only allows doing Transaction between one / two inventories
  */
 class SimpleTransactionGroup implements TransactionGroup{
-	private $creationTime;
-	protected $hasExecuted = false;
-	/** @var Player */
-	protected $source = null;
-
-	/** @var Inventory[] */
+	
+	const DEFAULT_ALLOWED_RETRIES = 5;
+	//const MAX_QUEUE_LENGTH = 3;
+	
+	/** @var Player[] */
+	protected $player = null;
+	
+	/** @var \SplQueue */
+	protected $transactionQueue;
+	/** @var \SplQueue */
+	protected $transactionsToRetry;
+	
+	/** @var bool */
+	protected $isExecuting = false;
+	
+	/** @var float */
+	protected $lastUpdate = -1;
+	
+	/** @var Inventory[] */	
 	protected $inventories = [];
-
-	/** @var Transaction[] */
-	protected $transactions = [];
-
+	
 	/**
-	 * @param Player $source
+	 * @param Player $player
 	 */
-	public function __construct(Player $source = null){
-		$this->creationTime = microtime(true);
-		$this->source = $source;
+	public function __construct(Player $player = null){
+		$this->player = $player;
+		$this->transactionQueue = new \SplQueue();
+		$this->transactionsToRetry = new \SplQueue();
 	}
-
 	/**
 	 * @return Player
 	 */
-	public function getSource(){
-		return $this->source;
+	public function getPlayer(){
+		return $this->player;
 	}
-
-	public function getCreationTime(){
-		return $this->creationTime;
-	}
-
-	public function getInventories(){
-		return $this->inventories;
-	}
-
-	public function getTransactions(){
-		return $this->transactions;
-	}
-
-	public function addTransaction(Transaction $transaction){
-		if(isset($this->transactions[spl_object_hash($transaction)])){
-			return;
-		}
-		foreach($this->transactions as $hash => $tx){
-			if($tx->getInventory() === $transaction->getInventory() and $tx->getSlot() === $transaction->getSlot()){
-				if($transaction->getCreationTime() >= $tx->getCreationTime()){
-					unset($this->transactions[$hash]);
-				}else{
-					return;
-				}
-			}
-		}
-		$this->transactions[spl_object_hash($transaction)] = $transaction;
-		$this->inventories[spl_object_hash($transaction->getInventory())] = $transaction->getInventory();
-	}
-
+	
 	/**
-	 * @param Item[] $needItems
-	 * @param Item[] $haveItems
-	 *
+	 * @return \SplQueue
+	 */
+	public function getTransactions(){
+		return $this->transactionQueue;
+	}
+	
+	/**
+	 * @return Inventory[]
+	 */
+	/*public function getInventories(){
+		return $this->inventories;
+	}*/
+	
+	/**
 	 * @return bool
 	 */
-	protected function matchItems(array &$needItems, array &$haveItems){
-		foreach($this->transactions as $key => $ts){
-			if($ts->getTargetItem()->getId() !== Item::AIR){
-				$needItems[] = $ts->getTargetItem();
-			}
-			$checkSourceItem = $ts->getInventory()->getItem($ts->getSlot());
-			$sourceItem = $ts->getSourceItem();
-			if(!$checkSourceItem->equals($sourceItem) or $sourceItem->getCount() !== $checkSourceItem->getCount()){
-				return false;
-			}
-			if($sourceItem->getId() !== Item::AIR){
-				$haveItems[] = $sourceItem;
-			}
-		}
-
-		foreach($needItems as $i => $needItem){
-			foreach($haveItems as $j => $haveItem){
-				if($needItem->equals($haveItem)){
-					$amount = min($needItem->getCount(), $haveItem->getCount());
-					$needItem->setCount($needItem->getCount() - $amount);
-					$haveItem->setCount($haveItem->getCount() - $amount);
-					if($haveItem->getCount() === 0){
-						unset($haveItems[$j]);
-					}
-					if($needItem->getCount() === 0){
-						unset($needItems[$i]);
-						break;
-					}
-				}
-			}
-		}
-
+	public function isExecuting(){
+		return $this->isExecuting;
+	}
+	
+	/**
+	 * @param Transaction $transaction
+	 * @return bool
+	 *
+	 * Adds a transaction to the queue
+	 * Returns true if the addition was successful, false if not.
+	 */
+	public function addTransaction(Transaction $transaction){
+		$this->transactionQueue->enqueue($transaction);
+		$this->lastUpdate = microtime(true);
+		
 		return true;
 	}
-
-	public function canExecute(){
-		$haveItems = [];
-		$needItems = [];
-
-		if($this->matchItems($needItems, $haveItems) and count($this->transactions) > 0){
-			if(count($haveItems) === 0 and count($needItems) === 0){
-				return true;
-			}elseif($this->source->isCreative(true) and count($needItems) > 0){ //Added items from creative inventory
-				foreach($needItems as $item){
-					if(Item::getCreativeItemIndex($item) === -1 and $item->getId() !== Item::AIR){
-						return false;
-					}
-				}
-
-				return true;
-			}
+	
+	/** 
+	 * @param Transaction 	$transaction
+	 * @param Transaction[] &$completed
+	 *
+	 * Handles a failed transaction
+	 */
+	private function handleFailure(Transaction $transaction, &$failed){
+		$transaction->addFailure();
+		if($transaction->getFailures() >= self::DEFAULT_ALLOWED_RETRIES){
+			//Transaction failed after several retries
+			echo "transaction completely failed\n";
+			$failed[] = $transaction;
+		}else{
+			//Add the transaction to the back of the queue to be retried
+			$this->transactionsToRetry->enqueue($transaction);
 		}
-
-		return false;
 	}
-
+	
+	/**
+	 * @return bool
+	 *
+	 * Handles transaction queue execution
+	 */
 	public function execute(){
-		if($this->hasExecuted() or !$this->canExecute()){
-			return false;
+		
+		/** @var Transaction[] */
+		$failed = [];
+		
+		$this->isExecuting = true;
+		
+		$failCount = $this->transactionsToRetry->count();
+		while(!$this->transactionsToRetry->isEmpty()){
+			//Some failed transactions are waiting from the previous execution to be retried
+			$this->transactionQueue->enqueue($this->transactionsToRetry->dequeue());
 		}
-
-		Server::getInstance()->getPluginManager()->callEvent($ev = new InventoryTransactionEvent($this));
-		if($ev->isCancelled()){
-			foreach($this->inventories as $inventory){
-				if($inventory instanceof PlayerInventory){
-					$inventory->sendArmorContents($this->getSource());
+		
+		if($this->transactionQueue->count() !== 0){
+			echo "Batch-handling ".$this->transactionQueue->count()." changes, with ".$failCount." retries.\n";
+		}
+		
+		while(!$this->transactionQueue->isEmpty()){
+			
+			$transaction = $this->transactionQueue->dequeue();
+				
+			$change = $transaction->getChange();
+			if($change["out"] instanceof Item){
+				if(!$this->player->getServer()->allowInventoryCheats){
+					if($transaction->getInventory()->slotContains($transaction->getSlot(), $change["out"]) and !$this->player->isCreative()){
+						//Do not add items to the crafting inventory in creative to prevent weird duplication bugs.
+						$this->player->getCraftingInventory()->addItem($change["out"]);
+						
+					}elseif(!$player->isCreative()){ //Transaction failed, if the player is not in creative then this needs to be retried.
+						$this->handleFailure($transaction, $failed);
+						continue;
+					}
 				}
-				$inventory->sendContents($this->getSource());
+				$transaction->getInventory()->setItem($transaction->getSlot(), $transaction->getTargetItem(), false);
 			}
-
-			return false;
+			if($change["in"] instanceof Item){
+				if(!$this->player->getServer()->allowInventoryCheats){
+					if($this->player->getCraftingInventory()->contains($change["in"]) and !$player->isCreative()){
+						$this->player->getCraftingInventory()->removeItem($change["in"]);
+						
+					}elseif(!$this->player->isCreative()){ //Transaction failed, if the player was not creative then transaction is illegal
+						$this->handleFailure($transaction, $failed);
+						continue;
+					}
+				}
+				
+				if($transaction instanceof DropItemTransaction){
+					$this->player->dropItem($transaction->getTargetItem());
+				}else{
+					$transaction->getInventory()->setItem($transaction->getSlot(), $transaction->getTargetItem(), false);
+				}
+			}
+			$transaction->setSuccess();
+			$transaction->sendSlotUpdate($this->player);
 		}
-
-		foreach($this->transactions as $transaction){
-			$transaction->getInventory()->setItem($transaction->getSlot(), $transaction->getTargetItem());
+		$this->isExecuting = false;
+		foreach($failed as $f){
+			$f->sendSlotUpdate($this->player);
 		}
-
+		
+		$this->lastExecution = microtime(true);
 		$this->hasExecuted = true;
-
 		return true;
-	}
-
-	public function hasExecuted(){
-		return $this->hasExecuted;
 	}
 }
