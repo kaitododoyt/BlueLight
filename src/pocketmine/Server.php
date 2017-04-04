@@ -1511,8 +1511,8 @@ class Server{
 			$this->stevekick = $this->getProperty("SteveKick", false);
 			$this->golemspawn = $this->getProperty("GolemSpawn", false);
 			$this->rideableentity = $this->getProperty("RideableEntity", false);
-			$this->cleanentity = $this->getProperty("CleanEntity", false)
-			$this->allowInventoryCheats = $this->getProperty("inventory.allow-cheats", false);
+			$this->cleanentity = $this->getProperty("CleanEntity", false);			
+                        $this->allowInventoryCheats = $this->getProperty("inventory.allow-cheats", false);
 
 			if($this->crashdump){
 				if(!file_exists($dataPath . "crashdumps/")){
