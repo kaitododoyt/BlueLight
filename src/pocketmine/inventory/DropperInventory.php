@@ -21,15 +21,15 @@
 
 namespace pocketmine\inventory;
 
-use pocketmine\tile\Hopper;
+use pocketmine\tile\Dropper;
 
-class HopperInventory extends ContainerInventory{
-	public function __construct(Hopper $tile){
-		parent::__construct($tile, InventoryType::get(InventoryType::HOPPER));
+class DropperInventory extends ContainerInventory{
+	public function __construct(Dropper $tile){
+		parent::__construct($tile, InventoryType::get(InventoryType::DROPPER));
 	}
 
 	/**
-	 * @return Hopper
+	 * @return Dropper
 	 */
 	public function getHolder(){
 		return $this->holder;
